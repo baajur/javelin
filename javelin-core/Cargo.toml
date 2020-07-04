@@ -13,6 +13,8 @@ keywords = ["live-streaming"]
 [dependencies]
 anyhow = "^1.0"
 log = "^0.4"
+bytes = "^0.5"
+thiserror = "1.0"
 
 [dependencies.config]
 version = "0.10.1"
@@ -22,8 +24,14 @@ features = ["yaml"]
 [dependencies.tokio]
 version = "0.2.21"
 default-features = false
-features = ["rt-core", "sync"]
+features = ["rt-core", "sync", "stream"]
 
 [dependencies.javelin-types]
 version = "0.4.0-dev.1"
 path = "../javelin-types"
+
+
+[dev-dependencies.tokio]
+version = "0.2.21"
+default-features = false
+features = ["rt-threaded", "macros"]
