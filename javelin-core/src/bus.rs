@@ -17,17 +17,20 @@ use {
         stream::StreamExt,
     },
     self::{
-        error::Error,
         common::{BusName, Request, response_channel},
-        message::Message,
         registry::Registry,
-        connection::{Connection, Addr},
     },
 };
 
+pub use self::{
+    error::Error,
+    message::Message,
+    connection::{Connection, Addr},
+};
 
-type Incoming = mpsc::UnboundedReceiver<Request<Message>>;
-type RawHandle = mpsc::UnboundedSender<Request<Message>>;
+
+type Incoming = mpsc::UnboundedReceiver<Request>;
+type RawHandle = mpsc::UnboundedSender<Request>;
 
 
 pub struct Bus {
@@ -44,28 +47,36 @@ impl Bus {
      }
 
     /// Get a new bus handle to register an address.
-    pub fn get_handle(&mut self) -> Handle {
+    pub fn get_handle(&self) -> Handle {
         Handle { bus: self.handle.clone() }
     }
 
-    async fn next_message(&mut self) -> Option<Request<Message>> {
-        self.incoming.next().await
+    pub fn spawn() -> Handle {
+        let bus = Self::new();
+        let handle = bus.get_handle();
+        tokio::spawn(bus.listen());
+        handle
     }
 
     /// Start listening to bus messages.
-    pub async fn listen(mut self) {
+    async fn listen(mut self) {
         while let Some(request) = self.next_message().await {
             match request {
-                Request::WithoutResponse(_msg) => {
-                    todo!();
-                },
-                Request::WithResponse(_msg, _responder) => {
-                    todo!();
+                Request::Message(message, responder) => {
+                    let registry = self.registry.read().await;
+                    let sender = registry.lookup(&message.target);
+                    let response = match sender {
+                        Ok(mut tx) => {
+                            tx.send(message).await
+                                .map_err(|msg| Error::MessageSendFailed(msg.0.target))
+                        },
+                        Err(err)=> Err(err)
+                    };
+                    let _ = responder.send(response);
                 },
                 Request::Register(bus_name, responder) => {
                     let mut registry = self.registry.write().await;
                     let result = registry.register(bus_name);
-                    // TODO: handle error
                     let _ = responder.send(result);
                 },
                 Request::Unregister(bus_name) => {
@@ -80,6 +91,10 @@ impl Bus {
             }
         }
     }
+
+    async fn next_message(&mut self) -> Option<Request> {
+        self.incoming.next().await
+    }
 }
 
 
@@ -92,67 +107,76 @@ pub struct Handle {
 impl Handle {
     /// Register a new connection on the bus.
     pub async fn register<N>(&mut self, name: N) -> Result<Connection, Error>
-        where N: TryInto<BusName>
+        where N: TryInto<BusName, Error=Error>
     {
-        let bus_name = name
-            .try_into()
-            .map_err(|_| Error::InvalidBusName)?;
+        let bus_name = name.try_into()?;
 
         let (responder, response) = response_channel();
 
-        // TODO: handle error
-        let _ = self.bus.send(Request::Register(bus_name.clone(), responder));
+        self.bus
+            .send(Request::Register(bus_name.clone(), responder))
+            .map_err(|_| Error::BusSendFailed)?;
 
-        let rx = response.await
-            .map_err(|_| Error::AddressRecvFailed)?;
-
-        Ok(Connection::new(bus_name, self.clone(), rx?))
+        response.await
+            .map_err(|_| Error::AddressRecvFailed)?
+            .map(|rx| {
+                Connection::new(bus_name, self.clone(), rx)
+            })
     }
 
     /// Unregisters the bus connection with the given name.
     pub fn unregister(&self, name: BusName) -> Result<(), Error> {
-        if let Err(_) = self.bus.send(Request::Unregister(name)) {
-            log::error!("Failed to unregister bus connection");
-        }
-        Ok(())
+        self.bus
+            .send(Request::Unregister(name.clone()))
+            .map_err(|_| Error::BusSendFailed)
     }
 
-    pub async fn lookup(&self, name: BusName) -> Result<Addr, Error> {
+    /// Look up a bus address by name.
+    pub async fn lookup<N>(&self, name: N) -> Result<Addr, Error>
+        where N: TryInto<BusName, Error=Error>
+    {
+        let name = name.try_into()?;
+
         let (responder, response) = response_channel();
 
-        let _ = self.bus.send(Request::Lookup(name, responder));
-        let tx = response.await
-            .map_err(|_| Error::AddressRecvFailed)?;
+        self.bus
+            .send(Request::Lookup(name.clone(), responder))
+            .map_err(|_| Error::BusSendFailed)?;
 
-        let addr = Addr::new(tx?);
-        Ok(addr)
+        response.await
+            .map_err(|_| Error::BusResponseFailed)?
+            .map(|tx| Addr::new(name, tx))
+    }
+
+    /// Sends a message to be handled by the bus.
+    pub async fn send(&self, msg: Message) -> Result<(), Error> {
+        let (responder, response) = response_channel();
+
+        self.bus
+            .send(Request::Message(msg, responder))
+            .map_err(|_| Error::BusSendFailed)?;
+
+        response.await
+            .map_err(|_| Error::BusResponseFailed)?
     }
 }
 
+
+// ===== Tests =====
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn spawn_bus() -> Handle {
-        let mut bus = Bus::new();
-        let handle = bus.get_handle();
-        tokio::spawn(bus.listen());
-        handle
-    }
-
     #[tokio::test]
     async fn register_on_bus() {
-        let mut handle = spawn_bus();
+        let mut handle = Bus::spawn();
 
         let client1= handle.register("test.client.1").await;
         assert_eq!(client1.is_ok(), true);
 
         let client2= handle.register("test.client.1").await;
-        match client2 {
-            Err(Error::AddressInUse) => (),
-            _ => panic!("Did not receive expected error")
-        }
+        assert_eq!(client2.unwrap_err(), Error::AddressInUse);
 
         drop(client1);
         let addr2 = handle.register("test.client.1").await;
@@ -161,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_direct_message() {
-        let mut handle = spawn_bus();
+        let mut handle = Bus::spawn();
 
         let client1 = handle
             .register("test.client.1").await

@@ -1,4 +1,7 @@
-use thiserror::Error;
+use {
+    thiserror::Error,
+    super::common::BusName,
+};
 
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -21,6 +24,15 @@ pub enum Error {
     #[error("Failed to create message")]
     MessageCreationFailed,
 
+    #[error("Failed to send message to {0}")]
+    MessageSendFailed(BusName),
+
     #[error("Tried to send request to closed bus")]
     BusClosed,
+
+    #[error("Bus failed to return response")]
+    BusResponseFailed,
+
+    #[error("Failed to send message to bus")]
+    BusSendFailed,
 }

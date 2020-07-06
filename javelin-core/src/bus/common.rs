@@ -1,5 +1,8 @@
 use {
-    std::convert::TryFrom,
+    std::{
+        convert::TryFrom,
+        fmt::{self, Display},
+    },
     tokio::sync::{mpsc, oneshot},
     super::{message::Message, Error},
 };
@@ -12,27 +15,29 @@ pub(super) fn bus_channel() -> (BusSender, BusReceiver) {
 }
 
 
-/// Result of a response that has been sent back
-pub(super) type Response<P> = Result<P, Error>;
-
 /// Channel with which a response can be sent back
-pub(super) type Responder<P> = oneshot::Sender<Response<P>>;
-pub(super) type ResponseHandle<P> = oneshot::Receiver<Response<P>>;
+pub(super) type Responder<P> = oneshot::Sender<P>;
+pub(super) type ResponseHandle<P> = oneshot::Receiver<P>;
 pub(super) fn response_channel<P>() -> (Responder<P>, ResponseHandle<P>) {
     oneshot::channel()
 }
 
-pub(super) enum Request<M, R=M> {
-    WithResponse(M, Responder<R>),
-    WithoutResponse(M),
-    Register(BusName, Responder<BusReceiver>),
+pub(super) enum Request {
+    Message(Message, Responder<Result<(), Error>>),
+    Register(BusName, Responder<Result<BusReceiver, Error>>),
     Unregister(BusName),
-    Lookup(BusName, Responder<BusSender>),
+    Lookup(BusName, Responder<Result<BusSender, Error>>),
 }
 
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct BusName(String);
+
+impl Display for BusName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
 
 impl TryFrom<String> for BusName {
     type Error = Error;
