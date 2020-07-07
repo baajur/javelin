@@ -5,7 +5,7 @@ use {
     },
     serde::{Serialize, Deserialize},
     super::{
-        common::{BusName, BusSender, BusReceiver},
+        common::{BusName, BusSender, BusReceiver, Event, EventId},
         message::{Message, MessagePayload},
         Error,
         Handle,
@@ -30,7 +30,7 @@ impl Connection {
               M: Serialize + Deserialize<'de>,
     {
         let name = name.try_into()?;
-        let message = Message::new(name, msg);
+        let message = Message::new(Some(name), msg);
         self.handle.send(message).await
     }
 
@@ -39,8 +39,34 @@ impl Connection {
               M: Into<MessagePayload>
     {
         let name = name.try_into()?;
-        let message = Message::new_raw(name, msg);
+        let message = Message::new_raw(Some(name), msg);
         self.handle.send(message).await
+    }
+
+    pub async fn register_event<S>(&self, id: S) -> Result<(), Error>
+        where S: Into<EventId>
+    {
+        let event = Event::new(self.name.clone(), id.into());
+        self.handle.register_event(event).await
+    }
+
+    pub async fn subscribe<N, E>(&self, name: N, id: E) -> Result<(), Error>
+        where N: TryInto<BusName, Error=Error>,
+              E: Into<EventId>
+    {
+        let name = name.try_into()?;
+        let event_id = id.into();
+        let event = Event::new(name, event_id.clone());
+        self.handle.subscribe(self.name.clone(), event).await
+    }
+
+    pub async fn broadcast<'de, E, M>(&self, id: E, msg: M) -> Result<(), Error>
+        where E: Into<EventId>,
+              M: Serialize + Deserialize<'de>
+    {
+        let message = Message::new(None, msg);
+        let event = Event::new(self.name.clone(), id.into());
+        self.handle.broadcast(event, message).await
     }
 
     pub async fn next_message(&mut self) -> Option<Message> {
@@ -81,7 +107,7 @@ impl Addr {
     pub async fn send<M>(&mut self, msg: M) -> Result<(), Error>
         where M: Into<MessagePayload>
     {
-        let message = Message::new_raw(self.name.clone(), msg);
+        let message = Message::new_raw(Some(self.name.clone()), msg);
 
         // TODO: handle errors
         let _ = self.tx.send(message).await;

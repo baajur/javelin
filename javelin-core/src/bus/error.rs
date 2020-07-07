@@ -15,6 +15,9 @@ pub enum Error {
     #[error("No registered event found with this name")]
     EventNotFound,
 
+    #[error("Event is already registred")]
+    EventAlreadyRegistred,
+
     #[error("Bus name is not valid")]
     InvalidBusName,
 

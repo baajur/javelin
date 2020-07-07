@@ -24,9 +24,27 @@ pub(super) fn response_channel<P>() -> (Responder<P>, ResponseHandle<P>) {
 
 pub(super) enum Request {
     Message(Message, Responder<Result<(), Error>>),
+    Broadcast(Event, Message),
     Register(BusName, Responder<Result<BusReceiver, Error>>),
     Unregister(BusName),
     Lookup(BusName, Responder<Result<BusSender, Error>>),
+    RegisterEvent(Event, Responder<Result<(), Error>>),
+    Subscribe(BusName, Event, Responder<Result<(), Error>>),
+}
+
+
+pub type EventId = String;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Event {
+    pub origin: BusName,
+    pub id: EventId,
+}
+
+impl Event {
+    pub(super) fn new(origin: BusName, id: String) -> Self {
+        Self { origin, id }
+    }
 }
 
 
