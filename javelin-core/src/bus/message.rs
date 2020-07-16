@@ -1,15 +1,35 @@
 use {
     serde::{Serialize, Deserialize},
     bytes::Bytes,
-    super::common::BusName,
+    super::{
+        common::BusName,
+        error::Error,
+    },
 };
 
 
-pub type MessagePayload = Bytes;
+#[derive(Debug, Clone, PartialEq)]
+pub enum MessagePayload {
+    Ping,
+    Bytes(Bytes),
+}
+
+impl From<Bytes> for MessagePayload {
+    fn from(val: Bytes) -> Self {
+        Self::Bytes(val)
+    }
+}
+
+impl From<Vec<u8>> for MessagePayload {
+    fn from(val: Vec<u8>) -> Self {
+        Self::from(Bytes::from(val))
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct Message {
-    origin: Option<BusName>,
+    pub origin: Option<BusName>,
     pub target: Option<BusName>,
     pub payload: MessagePayload,
 }
@@ -26,5 +46,21 @@ impl Message {
         where P: Into<MessagePayload>
     {
         Self { target, payload: payload.into(), origin: None }
+    }
+
+    pub fn ping() -> Self {
+        Self::new(None, ())
+    }
+
+    pub fn unpack<'de, T>(&'de self) -> Result<T, Error>
+        where T: Deserialize<'de>
+    {
+        match &self.payload {
+            MessagePayload::Bytes(bytes) => {
+                bincode::deserialize(&bytes)
+                    .map_err(|_| Error::MessageUnpackFailed)
+            },
+            _ => Err(Error::MessageUnpackFailed)
+        }
     }
 }

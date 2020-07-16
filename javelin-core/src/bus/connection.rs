@@ -7,8 +7,7 @@ use {
     super::{
         common::{BusName, BusSender, BusReceiver, Event, EventId},
         message::{Message, MessagePayload},
-        Error,
-        Handle,
+        Error, Bus,
     },
 };
 
@@ -16,12 +15,12 @@ use {
 /// Represents a connection to the bus system.
 pub struct Connection {
     name: BusName,
-    handle: Handle,
+    handle: Bus,
     rx: BusReceiver,
 }
 
 impl Connection {
-    pub(super) fn new(name: BusName, handle: Handle, rx: BusReceiver) -> Self {
+    pub(super) fn new(name: BusName, handle: Bus, rx: BusReceiver) -> Self {
         Self { name, handle, rx }
     }
 
@@ -43,13 +42,6 @@ impl Connection {
         self.handle.send(message).await
     }
 
-    pub async fn register_event<S>(&self, id: S) -> Result<(), Error>
-        where S: Into<EventId>
-    {
-        let event = Event::new(self.name.clone(), id.into());
-        self.handle.register_event(event).await
-    }
-
     pub async fn subscribe<N, E>(&self, name: N, id: E) -> Result<(), Error>
         where N: TryInto<BusName, Error=Error>,
               E: Into<EventId>
@@ -69,15 +61,14 @@ impl Connection {
         self.handle.broadcast(event, message).await
     }
 
-    pub async fn next_message(&mut self) -> Option<Message> {
-        self.rx.recv().await
-    }
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        if self.handle.unregister(self.name.clone()).is_err() {
-            log::error!("Failed to unregister {}", self.name);
+    pub async fn next_message(&mut self) -> Result<Option<Message>, Error> {
+        loop {
+            let msg = self.rx.recv().await;
+            match msg {
+                None => return Ok(None),
+                Some(m) if m.payload == MessagePayload::Ping => continue,
+                Some(m) => return Ok(Some(m))
+            }
         }
     }
 }

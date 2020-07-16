@@ -38,4 +38,7 @@ pub enum Error {
 
     #[error("Failed to send message to bus")]
     BusSendFailed,
+
+    #[error("Failed to unpack message payload")]
+    MessageUnpackFailed,
 }

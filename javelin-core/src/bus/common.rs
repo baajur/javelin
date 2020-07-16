@@ -3,7 +3,7 @@ use {
         convert::TryFrom,
         fmt::{self, Display},
     },
-    tokio::sync::{mpsc, oneshot},
+    tokio::sync::mpsc,
     super::{message::Message, Error},
 };
 
@@ -12,24 +12,6 @@ pub(super) type BusSender = mpsc::Sender<Message>;
 pub(super) type BusReceiver = mpsc::Receiver<Message>;
 pub(super) fn bus_channel() -> (BusSender, BusReceiver) {
     mpsc::channel(16)
-}
-
-
-/// Channel with which a response can be sent back
-pub(super) type Responder<P> = oneshot::Sender<P>;
-pub(super) type ResponseHandle<P> = oneshot::Receiver<P>;
-pub(super) fn response_channel<P>() -> (Responder<P>, ResponseHandle<P>) {
-    oneshot::channel()
-}
-
-pub(super) enum Request {
-    Message(Message, Responder<Result<(), Error>>),
-    Broadcast(Event, Message),
-    Register(BusName, Responder<Result<BusReceiver, Error>>),
-    Unregister(BusName),
-    Lookup(BusName, Responder<Result<BusSender, Error>>),
-    RegisterEvent(Event, Responder<Result<(), Error>>),
-    Subscribe(BusName, Event, Responder<Result<(), Error>>),
 }
 
 

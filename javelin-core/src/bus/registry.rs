@@ -1,10 +1,7 @@
 use {
     std::collections::{HashMap, hash_map::Entry},
     super::{
-        common::{
-            BusName, BusSender, BusReceiver, bus_channel,
-            Event
-        },
+        common::{BusName, BusSender, BusReceiver, bus_channel, Event},
         Error
     },
 };
@@ -17,10 +14,6 @@ pub(super) struct Registry {
 }
 
 impl Registry {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn register(&mut self, name: BusName) -> Result<BusReceiver, Error> {
         match self.members.entry(name) {
             Entry::Occupied(_) => Err(Error::AddressInUse),
@@ -43,25 +36,19 @@ impl Registry {
             .ok_or(Error::TargetAddressNotFound)
     }
 
-    pub fn register_event(&mut self, event: Event) -> Result<(), Error> {
+    pub fn subscribe(&mut self, bus_name:  &BusName, event: Event) -> Result<(), Error> {
+        let sender = self.lookup(bus_name)?;
+
         match self.events.entry(event) {
-            Entry::Occupied(_) => Err(Error::EventAlreadyRegistred),
-            Entry::Vacant(map) => {
-                map.insert(Vec::new());
-                Ok(())
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().push(sender);
+            },
+            Entry::Vacant(entry) => {
+                entry.insert(vec![sender]);
             }
         }
-    }
 
-    pub fn subscribe(&mut self, bus_name:  &BusName, event: &Event) -> Result<(), Error> {
-        let sender = self.lookup(bus_name)?;
-        match self.events.get_mut(event) {
-            None => Err(Error::EventNotFound),
-            Some(entry) => {
-                entry.push(sender);
-                Ok(())
-            },
-        }
+        Ok(())
     }
 
     pub fn listeners(&mut self, event: &Event) -> Option<&mut Vec<BusSender>> {
