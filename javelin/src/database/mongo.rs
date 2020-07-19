@@ -132,10 +132,21 @@ impl UserRepository for Database {
 
     async fn add_user_with_key(&mut self, name: &str, key: &str) -> Result<(), Error> {
         let db = self.client.database(&self.config.dbname);
+        let coll = db.collection("users");
 
-        db.collection("users")
-            .insert_one(doc! { "name": name, "key": key }, None).await
-            .map_err(|_| Error::UpdateFailed)?;
+        match self.user_by_name(&name).await? {
+            Some(user) if &user.key == &key => {
+                return Ok(())
+            },
+            Some(_) => {
+                coll.update_one(doc! { "name": name }, doc! { "name": name, "key": key }, None).await
+                    .map_err(|_| Error::UpdateFailed)?;
+            },
+            None => {
+                coll.insert_one(doc! { "name": name, "key": key }, None).await
+                    .map_err(|_| Error::UpdateFailed)?;
+            }
+        }
 
         Ok(())
     }

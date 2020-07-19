@@ -1,5 +1,8 @@
 image: "debian:stretch-slim"
 
+services:
+  - mongo:4.2
+
 stages:
   - prepare
   - build
@@ -9,6 +12,9 @@ stages:
 variables:
   RUSTUP_HOME: "$CI_PROJECT_DIR/.rustup"
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  MONGO_INITDB: "javelin"
+  MONGO_INITDB_ROOT_USERNAME: "dev"
+  MONGO_INITDB_ROOT_PASSWORD: "s3cur3"
 
 .write_cache:
   cache:
@@ -60,6 +66,30 @@ prepare:install-rust:
     - rustup component add clippy
   rules:
     - changes: [rust-toolchain]
+
+test:db-sqlite:
+  extends: .toolchain-stable
+  stage: test
+  script:
+    - cd javelin/
+    - cargo test --no-default-features --features "db-sqlite"
+  rules:
+    - changes:
+      - "javelin/src/database.rs"
+      - "javelin/src/database/sqlite.rs"
+      - "javelin/src/database/sqlite/**/*"
+
+test:db-mongo:
+  extends: .toolchain-stable
+  stage: test
+  script:
+    - cd javelin/
+    - cargo test --no-default-features --features "db-mongo"
+  rules:
+    - changes:
+      - "javelin/src/database.rs"
+      - "javelin/src/database/mongo.rs"
+      - "javelin/src/database/mongo/**/*"
 
 test:stable:
   extends: .toolchain-stable

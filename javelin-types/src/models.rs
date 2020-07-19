@@ -14,6 +14,7 @@ pub enum Error {
 }
 
 
+#[derive(Debug, PartialEq)]
 pub struct User {
     pub name: String,
     pub key: String,
